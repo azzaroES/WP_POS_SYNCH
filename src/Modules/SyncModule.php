@@ -132,6 +132,8 @@ class SyncModule extends AbstractModule {
         header( 'Connection: keep-alive' );
         header( 'X-Accel-Buffering: no' );
 
+        do_action( 'pos_sse_stream_started' );
+
         echo "event: connected\ndata: {\"status\":\"listening\"}\n\n";
         @ob_flush();
         @flush();

@@ -41,6 +41,20 @@ class Plugin {
     }
 
     /**
+     * Returns the health status of all registered modules.
+     */
+    public function get_module_statuses() {
+        $statuses = [];
+        foreach ( $this->modules as $module ) {
+            if ( method_exists( $module, 'get_status' ) ) {
+                $status = $module->get_status();
+                $statuses[ basename( str_replace( '\\', '/', get_class( $module ) ) ) ] = $status;
+            }
+        }
+        return $statuses;
+    }
+
+    /**
      * Registers a GraphQL field to expose module health status.
      */
     public function register_health_check() {
@@ -56,13 +70,7 @@ class Plugin {
             'type' => [ 'list_of' => 'POSModuleStatus' ],
             'description' => __( 'Reports health of POS backend modules', 'pos-rules' ),
             'resolve' => function() {
-                $statuses = [];
-                foreach ( $this->modules as $module ) {
-                    if ( method_exists( $module, 'get_status' ) ) {
-                        $statuses[] = $module->get_status();
-                    }
-                }
-                return $statuses;
+                return array_values( $this->get_module_statuses() );
             }
         ]);
     }

@@ -1,0 +1,64 @@
+{
+  "plugin_identity": {
+    "name": "WP_POS_SYNCH",
+    "namespace": "POS\\WooSync",
+    "architecture": "Modular Singleton Orchestrator",
+    "core_file": "wp-pos-synch.php",
+    "orchestrator": "src/Plugin.php"
+  },
+  "database_and_meta": {
+    "product_meta": {
+      "_pos_rules": "JSON blob containing modifier groups, options, and business logic (min/max/price).",
+      "_pos_stepper_wizard_enabled": "'yes'/'no' toggle for product page UI style."
+    },
+    "order_meta": {
+      "_pos_type": "The selected service type (TAKE_OUT, DELIVERY, DINE_IN).",
+      "_pos_table": "The selected table number for DINE_IN orders.",
+      "_pos_pickup_time": "The scheduled appointment/pickup time slot.",
+      "_pos_modifiers_v2": "Internal JSON cache of selected modifiers for line items (v2 format)."
+    },
+    "global_options": {
+      "pos_restaurant_config": "The master JSON configuration for the shop (hours, services, fees).",
+      "pos_sse_last_update": "Timestamp used to trigger SSE stream events.",
+      "pos_sse_changed_orders": "Buffer of order IDs to be pushed via SSE.",
+      "pos_api_stats": "Persistent storage for API traffic, response times, and error rates."
+    }
+  },
+  "api_specification": {
+    "wpgraphql_extensions": {
+      "RootQuery.posSystemStatus": "Health check for all modules (Return status + errors).",
+      "RootQuery.posRestaurantConfig": "Returns the flat stringified restaurant configuration.",
+      "RootQuery.posShippingZones": "Consolidated map of all WC Shipping Zones and their methods.",
+      "Product.posRules": "Returns stringified _pos_rules for the specific product.",
+      "ShippingLine.methodId": "Exposes the internal method ID for order line items.",
+      "ShippingLine.instanceId": "Exposes the specific shipping instance ID."
+    },
+    "rest_endpoints": {
+      "GET/POST pos/v1/restaurant-config": "Master configuration sync for the POS frontend.",
+      "GET pos/v1/stream": "Real-time SSE stream for pushing order updates to KDS.",
+      "POST pos/v1/checkout-config": "Legacy-compatible endpoint for saving checkout field settings."
+    }
+  },
+  "module_interactions": {
+    "ShippingModule": "Extends WC_Shipping_Method to create 'pos_bridge_shipping'. It dynamically injects TAKE_OUT, DELIVERY, and DINE_IN as selectable rates with custom fees.",
+    "RulesModule": "Intercepts the WooCommerce 'Add to Cart' flow. It validates modifier selections, calculates dynamic totals, and persists modifier data into the 'pos_modifiers_v2' meta.",
+    "CheckoutModule": "Injects a custom UI into the billing form. It uses JS to transform radio buttons into a dropdown and handles per-service field visibility (e.g., hiding address for DINE_IN).",
+    "ConfigModule": "Handles the 'Horario' sidebar (Glassmorphism UI) and shop status logic based on openingHours.",
+    "SyncModule": "Tracks 'woocommerce_new_order' and 'woocommerce_update_order' to buffer changes for the SSE stream.",
+    "CacheModule": "Wraps expensive GQL and Config lookups in WordPress Transients (1-hour TTL).",
+    "AdminModule": "Advanced WooCommerce dashboard for module health monitoring and system diagnostics (v4.0 UI).",
+    "StatsModule": "API Analytics engine that tracks GraphQL/REST performance, error rates, and SSE connectivity."
+  },
+  "ui_components": {
+    "horario_sidebar": "Analog clock + Progress Pie + Digital readout injected via wp_footer.",
+    "checkout_dropdown": "JS-driven transformation of shipping methods to a Select element with a pulse-blinker status check.",
+    "modifier_stepper": "Multi-step JS wizard for product modifiers with real-time validation for min/max selections."
+  },
+  "deployment": {
+    "method": "SFTP-based chunked upload.",
+    "scripts": [
+      "deploy.cjs (Root)",
+      "deploy.js (Standalone in WP_POS_SYNCH repo)"
+    ]
+  }
+}

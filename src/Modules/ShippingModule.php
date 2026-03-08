@@ -15,13 +15,35 @@ class ShippingModule extends AbstractModule {
     protected function init() {
         // Register GraphQL Types & Fields
         add_action( 'graphql_register_types', [ $this, 'register_graphql_types' ] );
+
+        // Register POS Shipping Method
+        add_filter( 'woocommerce_shipping_methods', [ $this, 'add_pos_shipping_method' ] );
+        
+        // Auto-add to zones if missing
+        add_action( 'init', [ $this, 'ensure_method_in_zones' ], 20 );
     }
 
-    /**
-     * Registers all Shipping related types and resolvers for WPGraphQL.
-     */
+    public function add_pos_shipping_method( $methods ) {
+        $methods['pos_bridge_shipping'] = 'POS\WooSync\Modules\POS_Shipping_Method';
+        return $methods;
+    }
+
+    public function ensure_method_in_zones() {
+        if ( ! class_exists( 'WC_Shipping_Zones' ) || ! is_admin() ) return;
+        $zones = WC_Shipping_Zones::get_zones();
+        $zones[] = [ 'zone_id' => 0 ];
+        foreach ( $zones as $z ) {
+            $zone_id = isset($z['zone_id']) ? $z['zone_id'] : (isset($z['id']) ? $z['id'] : 0);
+            $zone = new WC_Shipping_Zone( $zone_id );
+            $already_has = false;
+            foreach ( $zone->get_shipping_methods() as $m ) {
+                if ( $m->id === 'pos_bridge_shipping' ) { $already_has = true; break; }
+            }
+            if ( ! $already_has ) { $zone->add_shipping_method('pos_bridge_shipping'); }
+        }
+    }
+
     public function register_graphql_types() {
-        // POS Shipping Method Object
         register_graphql_object_type( 'POSShippingMethod', [
             'description' => __( 'Shipping method within a zone', 'pos-rules' ),
             'fields' => [
@@ -33,8 +55,6 @@ class ShippingModule extends AbstractModule {
                 'settings'    => [ 'type' => 'String' ], 
             ],
         ]);
-
-        // POS Shipping Zone Object
         register_graphql_object_type( 'POSShippingZone', [
             'description' => __( 'A shipping zone with its methods', 'pos-rules' ),
             'fields' => [
@@ -44,92 +64,79 @@ class ShippingModule extends AbstractModule {
                 'methods' => [ 'type' => [ 'list_of' => 'POSShippingMethod' ] ],
             ],
         ]);
-
-        // Root Query: posShippingZones
         register_graphql_field( 'RootQuery', 'posShippingZones', [
             'type'        => [ 'list_of' => 'POSShippingZone' ],
             'description' => __( 'Gets all WooCommerce shipping zones and their methods', 'pos-rules' ),
             'resolve'     => [ $this, 'resolve_shipping_zones' ]
         ]);
-
-        // Extension: ShippingLine Fields
         $this->register_shipping_line_fields();
     }
 
-    /**
-     * Resolves the consolidated shipping zones list.
-     */
     public function resolve_shipping_zones() {
         if ( ! class_exists( 'WC_Shipping_Zones' ) ) return [];
-
         $zones = WC_Shipping_Zones::get_zones();
         $formatted = [];
-        
-        // Add "Rest of the World" zone (id 0)
         $zone_0 = new WC_Shipping_Zone(0);
-        $zones[0] = [
-            'zone_id'      => 0,
-            'zone_name'    => $zone_0->get_zone_name(),
-            'zone_order'   => 0,
-            'shipping_methods' => $zone_0->get_shipping_methods(),
-        ];
-
+        $zones[0] = [ 'zone_id' => 0, 'zone_name' => $zone_0->get_zone_name(), 'zone_order' => 0, 'shipping_methods' => $zone_0->get_shipping_methods() ];
         foreach ( $zones as $z ) {
             $methods = [];
             if ( ! empty( $z['shipping_methods'] ) ) {
                 foreach ( $z['shipping_methods'] as $m ) {
-                    $methods[] = [
-                        'id'          => $m->id,
-                        'instanceId'  => $m->instance_id,
-                        'title'       => $m->get_title(),
-                        'methodTitle' => $m->method_title,
-                        'enabled'     => $m->enabled === 'yes',
-                        'settings'    => wp_json_encode( $m->instance_settings ),
-                    ];
+                    $methods[] = [ 'id' => $m->id, 'instanceId' => $m->instance_id, 'title' => $m->get_title(), 'methodTitle' => $m->method_title, 'enabled' => $m->enabled === 'yes', 'settings' => wp_json_encode( $m->instance_settings ) ];
                 }
             }
-            $formatted[] = [
-                'id'      => (int)$z['zone_id'],
-                'name'    => $z['zone_name'],
-                'order'   => (int)$z['zone_order'],
-                'methods' => $methods,
-            ];
+            $formatted[] = [ 'id' => (int)$z['zone_id'], 'name' => $z['zone_name'], 'order' => (int)$z['zone_order'], 'methods' => $methods ];
         }
-
-        // Sort by zone order
-        usort( $formatted, function($a, $b) {
-            return $a['order'] <=> $b['order'];
-        });
-
         return $formatted;
     }
 
-    /**
-     * Adds missing fields to the standard ShippingLine type in WPGraphQL.
-     */
     private function register_shipping_line_fields() {
-        register_graphql_field( 'ShippingLine', 'methodId', [
-            'type'        => 'String',
-            'description' => __( 'The method ID of the shipping line', 'pos-rules' ),
-            'resolve'     => function( $shipping_line ) {
-                if ( is_object( $shipping_line ) ) {
-                    return method_exists( $shipping_line, 'get_method_id' ) ? $shipping_line->get_method_id() : null;
-                }
-                return ( is_array( $shipping_line ) && isset( $shipping_line['method_id'] ) ) ? $shipping_line['method_id'] : null;
-            }
-        ]);
-
-        register_graphql_field( 'ShippingLine', 'instanceId', [
-            'type'        => 'Int',
-            'description' => __( 'The instance ID of the shipping line', 'pos-rules' ),
-            'resolve'     => function( $shipping_line ) {
-                if ( is_object( $shipping_line ) ) {
-                    $val = method_exists( $shipping_line, 'get_instance_id' ) ? $shipping_line->get_instance_id() : null;
-                    return is_numeric( $val ) ? (int) $val : $val;
-                }
-                $val = ( is_array( $shipping_line ) && isset( $shipping_line['instance_id'] ) ) ? $shipping_line['instance_id'] : null;
-                return is_numeric( $val ) ? (int) $val : $val;
-            }
-        ]);
+        register_graphql_field( 'ShippingLine', 'methodId', [ 'type' => 'String', 'resolve' => function($l) { return is_object($l) ? (method_exists($l, 'get_method_id') ? $l->get_method_id() : null) : ($l['method_id'] ?? null); } ]);
     }
 }
+
+/**
+ * ============ POS Shipping Method Class ============
+ */
+add_action( 'woocommerce_shipping_init', function() {
+    if ( ! class_exists( 'WC_Shipping_Method' ) ) return;
+
+    class POS_Shipping_Method extends \WC_Shipping_Method {
+        public function __construct( $instance_id = 0 ) {
+            $this->id                 = 'pos_bridge_shipping';
+            $this->instance_id        = absint( $instance_id );
+            $this->method_title       = 'Restaurant Service (POS)';
+            $this->method_description = 'Take Away, Delivery, Table Service controlled by POS';
+            $this->enabled            = "yes";
+            $this->supports           = array( 'shipping-zones', 'instance-settings', 'instance-settings-modal' );
+            $this->init();
+        }
+        function init() {
+            $this->init_form_fields();
+            $this->init_settings();
+            $this->title = $this->get_option( 'title', 'Restaurant Service' );
+            add_action( 'woocommerce_update_options_shipping_' . $this->id, array( $this, 'process_admin_options' ) );
+        }
+        public function init_form_fields() { $this->form_fields = array( 'title' => array( 'title' => 'Method Title', 'type' => 'text', 'default' => 'Restaurant Service' ) ); }
+        public function calculate_shipping( $package = array() ) {
+            $config = get_option( 'pos_restaurant_config' );
+            if ( ! $config ) return;
+            if ( is_string( $config ) ) $config = json_decode( $config, true );
+            $services = isset($config['services']) ? $config['services'] : array();
+            if ( ! function_exists( 'WC' ) || is_null( WC() ) || ! isset( WC()->cart ) ) return;
+            $subtotal = WC()->cart->get_subtotal();
+            $free_threshold = isset($config['freeShippingThreshold']) ? floatval($config['freeShippingThreshold']) : 0;
+            $is_free = ($free_threshold > 0 && $subtotal >= $free_threshold);
+
+            foreach ( (array)$services as $s ) {
+                if ( empty($s['enabled']) ) continue;
+                $cost = 0; $label = $s['label']; $rate_id = '';
+                if ($s['id'] === 'TAKE_OUT') { $rate_id = 'pos_takeaway'; }
+                elseif ($s['id'] === 'DELIVERY') { $rate_id = 'pos_delivery'; $cost = floatval($s['fee'] ?? 0); if ($is_free) { $cost = 0; $label .= ' (FREE)'; } }
+                elseif ($s['id'] === 'DINE_IN') { $rate_id = 'pos_tableservice'; }
+                else { $rate_id = 'pos_svc_' . strtolower(preg_replace('/[^a-zA-Z0-9]/', '_', $s['id'])); }
+                $this->add_rate( [ 'id' => $rate_id, 'label' => $label, 'cost' => $cost ] );
+            }
+        }
+    }
+});

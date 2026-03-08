@@ -96,33 +96,49 @@ class RulesModule extends AbstractModule {
     }
 
     /**
-     * Registers the Product Admin UI fields for modifier rules.
+     * Registers the Product Admin UI fields for modifier rules in a dedicated tab.
      */
     public function register_product_admin_fields() {
-        add_action( 'woocommerce_product_options_general_product_data', function() {
+        add_filter( 'woocommerce_product_data_tabs', function( $tabs ) {
+            $tabs['pos_rules'] = [
+                'label'    => __( 'POS Rules', 'pos-rules' ),
+                'target'   => 'pos_rules_options',
+                'class'    => [ 'show_if_simple', 'show_if_variable' ],
+                'priority' => 100,
+            ];
+            return $tabs;
+        });
+
+        add_action( 'woocommerce_product_data_panels', function() {
             global $post;
+            $rules_json = get_post_meta( $post->ID, '_pos_rules', true );
+            $stepper_enabled = get_post_meta( $post->ID, '_pos_stepper_wizard_enabled', true ) === 'yes';
+            
+            echo '<div id="pos_rules_options" class="panel woocommerce_options_panel hidden">';
             echo '<div class="options_group">';
-            wp_nonce_field( 'pos_rules_nonce', 'pos_rules_nonce' );
+            wp_nonce_field( 'pos_rules_save', 'pos_rules_nonce' );
             
             woocommerce_wp_textarea_input([
                 'id'          => '_pos_rules',
-                'label'       => __( 'POS Modifier Rules (JSON)', 'pos-rules' ),
-                'placeholder' => '[{"id": "G1", "name": "..."}]',
-                'desc_tip'    => 'true',
-                'description' => __( 'Enter the JSON ruleset for product modifiers.', 'pos-rules' ),
-                'style'       => 'height: 200px; font-family: monospace;'
+                'label'       => __( 'Rules JSON', 'pos-rules' ),
+                'placeholder' => '{ "groups": [...] }',
+                'description' => __( 'Modifier rules in JSON format (usually synced from POS).', 'pos-rules' ),
+                'desc_tip'    => true,
+                'style'       => 'height: 300px; font-family: monospace; background: #f8fafc;'
             ]);
 
             woocommerce_wp_checkbox([
                 'id'          => '_pos_stepper_wizard_enabled',
                 'label'       => __( 'Enable Stepper Wizard', 'pos-rules' ),
-                'description' => __( 'Display modifiers in a step-by-step wizard format.', 'pos-rules' )
+                'description' => __( 'Convert the addon selector into a step-by-step wizard format.', 'pos-rules' ),
+                'value'       => $stepper_enabled ? 'yes' : 'no'
             ]);
+            echo '</div>';
             echo '</div>';
         });
 
         add_action( 'woocommerce_process_product_meta', function( $post_id ) {
-            if ( ! isset( $_POST['pos_rules_nonce'] ) || ! wp_verify_nonce( $_POST['pos_rules_nonce'], 'pos_rules_nonce' ) ) return;
+            if ( ! isset( $_POST['pos_rules_nonce'] ) || ! wp_verify_nonce( $_POST['pos_rules_nonce'], 'pos_rules_save' ) ) return;
             
             if ( isset( $_POST['_pos_rules'] ) ) {
                 update_post_meta( $post_id, '_pos_rules', $_POST['_pos_rules'] );
