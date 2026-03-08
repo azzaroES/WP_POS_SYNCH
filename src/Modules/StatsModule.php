@@ -64,6 +64,26 @@ class StatsModule extends AbstractModule {
         $stats = get_option( 'pos_api_stats', $this->get_default_stats() );
         $stats['active_streams']++;
         update_option( 'pos_api_stats', $stats );
+
+        // Track detailed client info
+        $clients = get_option( 'pos_active_clients', [] );
+        $ip = $_SERVER['REMOTE_ADDR'] ?? 'Unknown';
+        $ua = $_SERVER['HTTP_USER_AGENT'] ?? 'Unknown';
+        
+        // Clean up stale clients (older than 90s)
+        $now = time();
+        $clients = array_filter( $clients, function($c) use ($now) {
+            return ($now - $c['last_seen']) < 90;
+        });
+
+        $clients[$ip] = [
+            'ip'        => $ip,
+            'ua'        => $ua,
+            'last_seen' => $now,
+            'source'    => strpos($ua, 'Mobi') !== false ? 'Mobile' : 'Desktop'
+        ];
+
+        update_option( 'pos_active_clients', $clients );
     }
 
     private function get_duration() {

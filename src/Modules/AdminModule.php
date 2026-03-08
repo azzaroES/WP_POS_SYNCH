@@ -92,10 +92,30 @@ class AdminModule extends AbstractModule {
             'active_streams' => 0
         ]);
 
+        // System Metrics
+        $load = function_exists('sys_getloadavg') ? sys_getloadavg() : [0,0,0];
+        $mem_usage = memory_get_usage(true);
+        $mem_limit = $this->parse_size(ini_get('memory_limit'));
+        $mem_pct = $mem_limit > 0 ? round(($mem_usage / $mem_limit) * 100, 1) : 0;
+        
+        $disk_free = function_exists('disk_free_space') ? @disk_free_space(ABSPATH) : 0;
+        $disk_total = function_exists('disk_total_space') ? @disk_total_space(ABSPATH) : 0;
+        $disk_pct = $disk_total > 0 ? round((($disk_total - $disk_free) / $disk_total) * 100, 1) : 0;
+
+        $active_clients = get_option('pos_active_clients', []);
+        $now = time();
+        // Prune stale clients on view
+        $active_clients = array_filter($active_clients, function($c) use ($now) {
+            return ($now - $c['last_seen']) < 120;
+        });
+        if (count($active_clients) !== count(get_option('pos_active_clients', []))) {
+            update_option('pos_active_clients', $active_clients);
+        }
+
         ?>
         <div class="pos-admin-wrap">
             <div class="pos-header">
-                <h1>POS Unified Backend <span class="version">v4.0</span></h1>
+                <h1>POS Unified Backend <span class="version">v4.1</span></h1>
                 <div class="header-actions">
                     <button class="button button-primary" onclick="location.reload()">Refresh Diagnostics</button>
                 </div>
@@ -120,10 +140,62 @@ class AdminModule extends AbstractModule {
                                 <span class="lab">Error Rate</span>
                             </div>
                             <div class="stat-box">
-                                <span class="val"><?php echo $stats['active_streams']; ?></span>
-                                <span class="lab">Active SSE Clients</span>
+                                <span class="val"><?php echo count($active_clients); ?></span>
+                                <span class="lab">Connected Clients</span>
                             </div>
                         </div>
+                    </div>
+                </div>
+
+                <!-- Server Health -->
+                <div class="pos-card">
+                    <div class="pos-card-header"><h3>Server Health & Usage</h3></div>
+                    <div class="pos-card-content">
+                        <div class="status-item">
+                            <span class="status-label">CPU Load (1/5/15m)</span>
+                            <span class="status-value"><?php echo implode(' / ', $load); ?></span>
+                        </div>
+                        <div class="status-item">
+                            <span class="status-label">RAM Usage (<?php echo $mem_pct; ?>%)</span>
+                            <div class="status-value">
+                                <?php echo size_format($mem_usage); ?> / <?php echo ini_get('memory_limit'); ?>
+                            </div>
+                        </div>
+                        <div class="status-item">
+                            <span class="status-label">Disk Usage (<?php echo $disk_pct; ?>%)</span>
+                            <div class="status-value">
+                                <?php echo size_format($disk_total - $disk_free); ?> / <?php echo size_format($disk_total); ?>
+                            </div>
+                        </div>
+                        <div class="status-item">
+                            <span class="status-label">Processor</span>
+                            <span class="status-value" style="font-size:10px;"><?php echo PHP_OS; ?> (<?php echo php_uname('m'); ?>)</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Active Clients Details -->
+                <div class="pos-card">
+                    <div class="pos-card-header"><h3>Live Connections (SSE)</h3></div>
+                    <div class="pos-card-content">
+                        <?php if (empty($active_clients)): ?>
+                            <p style="text-align:center; color:#94a3b8; padding:20px;">No active POS/KDS connections found.</p>
+                        <?php else: ?>
+                            <?php foreach ($active_clients as $ip => $client): ?>
+                                <div class="status-item">
+                                    <div>
+                                        <span class="status-label"><?php echo esc_html($ip); ?></span>
+                                        <div style="font-size:10px; color:#94a3b8; max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="<?php echo esc_attr($client['ua']); ?>">
+                                            <?php echo esc_html($client['ua']); ?>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <span class="badge badge-ready"><?php echo esc_html($client['source']); ?></span>
+                                        <div style="font-size:9px; color:#94a3b8; text-align:right;">active <?php echo human_time_diff($client['last_seen']); ?> ago</div>
+                                    </div>
+                                </div>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
                     </div>
                 </div>
 
@@ -145,7 +217,7 @@ class AdminModule extends AbstractModule {
 
                 <!-- System Info -->
                 <div class="pos-card">
-                    <div class="pos-card-header"><h3>System Environment</h3></div>
+                    <div class="pos-card-header"><h3>Environment</h3></div>
                     <div class="pos-card-content">
                         <div class="status-item">
                             <span class="status-label">WP Version</span>
@@ -156,8 +228,8 @@ class AdminModule extends AbstractModule {
                             <span class="status-value"><?php echo PHP_VERSION; ?></span>
                         </div>
                         <div class="status-item">
-                            <span class="status-label">Memory Limit</span>
-                            <span class="status-value"><?php echo ini_get('memory_limit'); ?></span>
+                            <span class="status-label">SQL Mode</span>
+                            <span class="status-value" style="font-size:10px;">Standard</span>
                         </div>
                         <div class="status-item">
                             <span class="status-label">SSL Status</span>
@@ -172,5 +244,14 @@ class AdminModule extends AbstractModule {
             </div>
         </div>
         <?php
+    }
+
+    private function parse_size($size) {
+        $unit = preg_replace('/[^bkmgtpe]/i', '', $size);
+        $size = preg_replace('/[^0-9\.]/', '', $size);
+        if ($unit) {
+            return (int)round($size * pow(1024, stripos('bkmgtpe', $unit[0])));
+        }
+        return (int)round($size);
     }
 }
