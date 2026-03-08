@@ -33,7 +33,19 @@ Implements Server-Sent Events (SSE) to provide live status updates between WooCo
 
 ## 🚀 Deployment
 
-Deployment is handled via the root `deploy.cjs` script:
+### Standalone Deployment (from this repo)
+1. Install dependencies:
+   ```bash
+   npm install
+   ```
+2. Ensure you have a `.env` file in this directory (or parent) with SSH credentials.
+3. Run deployment:
+   ```bash
+   npm run deploy
+   ```
+
+### Integrated Deployment (from POS root)
+Alternatively, use the root deploy script:
 ```bash
 node deploy.cjs plugin
 ```

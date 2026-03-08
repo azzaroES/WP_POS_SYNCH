@@ -1,0 +1,13 @@
+{
+  "name": "wp_pos_synch",
+  "version": "1.0.0",
+  "description": "Modular POS WooCommerce Bridge Plugin",
+  "main": "pos-woo-rules-sync.php",
+  "scripts": {
+    "deploy": "node deploy.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "ssh2-sftp-client": "^10.0.3"
+  }
+}
