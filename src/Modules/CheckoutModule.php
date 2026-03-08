@@ -80,24 +80,25 @@ class CheckoutModule extends AbstractModule {
         echo '</div>';
         echo '</div>';
         ?>
+        <style id="pos-checkout-flicker-fix">
+            .woocommerce-shipping-methods, .woocommerce-shipping-totals { opacity: 0; transition: opacity 0.2s; }
+            .pos-dropdown-ready .woocommerce-shipping-methods, .pos-dropdown-ready .woocommerce-shipping-totals { opacity: 1; }
+            #pos_shipping_dropdown { width: 100% !important; font-size: 1.1em; padding: 8px; border-radius: 4px; border: 1px solid #ddd; background: #fff; cursor: pointer; }
+            .pos-blinker { width: 10px; height: 10px; background: #f6a623; border-radius: 50%; display: inline-block; margin-right: 8px; box-shadow: 0 0 5px rgba(246, 166, 35, 0.6); animation: pos-pulse-blinker 1.5s infinite; }
+            @keyframes pos-pulse-blinker { 0% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.3); opacity: 0.6; } 100% { transform: scale(1); opacity: 1; } }
+        </style>
         <script type="text/javascript">
             jQuery(function($){
                 var config = <?php echo wp_json_encode( $config ); ?>;
                 
                 function transformShippingToDropdown() {
-                    if ($('#pos_shipping_dropdown').length) return;
+                    var $methodsTable = $('.woocommerce-shipping-methods');
                     var $inputs = $('input.shipping_method');
                     if (!$inputs.length) return;
 
-                    if (!$('#pos-blinker-style').length) {
-                        $('head').append('<style id="pos-blinker-style">\
-                            .pos-blinker { width: 10px; height: 10px; background: #f6a623; border-radius: 50%; display: inline-block; margin-right: 8px; box-shadow: 0 0 5px rgba(246, 166, 35, 0.6); animation: pos-pulse-blinker 1.5s infinite; }\
-                            @keyframes pos-pulse-blinker { 0% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.3); opacity: 0.6; } 100% { transform: scale(1); opacity: 1; } }\
-                            #pos_shipping_dropdown { width: 100% !important; }\
-                        </style>');
-                    }
-
-                    var $container = $('.woocommerce-shipping-methods');
+                    // Clean up stale dropdowns if any
+                    $('#pos_shipping_dropdown').remove();
+                    
                     var customLabel = config.checkoutServiceLabel || 'Order Type';
                     var $select = $('<select id="pos_shipping_dropdown" class="select"></select>');
                     var currentSelection = $inputs.filter(':checked').val();
@@ -111,14 +112,18 @@ class CheckoutModule extends AbstractModule {
                         $input.hide(); $label.hide(); $input.closest('li').hide();
                     });
 
-                    $container.find('> p, > label:first-child').hide(); 
-                    $container.prepend($select);
+                    $methodsTable.find('> p, > label:first-child').hide(); 
+                    $methodsTable.prepend($select);
+                    
                     var $header = $('tr.shipping th, .woocommerce-shipping-totals th');
                     if ($header.length) $header.html('<span class="pos-blinker"></span> ' + customLabel);
 
                     $select.on('change', function(){
-                        $('input.shipping_method[value="'+$(this).val()+'"]').prop('checked', true).trigger('change');
+                        var val = $(this).val();
+                        $('input.shipping_method[value="'+val+'"]').prop('checked', true).trigger('change');
                     });
+
+                    $('body').addClass('pos-dropdown-ready');
                 }
 
                 function updateVisibility() {
@@ -146,19 +151,26 @@ class CheckoutModule extends AbstractModule {
                             $('#pos_table_number_field label .required').remove();
                             if (req.table) $('#pos_table_number_field label').append(' <abbr class="required">*</abbr>');
                         } else $('#pos_table_field_container').hide();
-                    } else $('#pos_custom_checkout_fields').hide();
+                    } else {
+                        $('#pos_custom_checkout_fields').hide();
+                    }
 
                     if (!$('#pos_detected_order_type').length) $('form.checkout').append('<input type="hidden" id="pos_detected_order_type" name="pos_detected_order_type" />');
                     $('#pos_detected_order_type').val(mappedType);
                 }
 
-                $(document.body).on('updated_checkout change', 'input[name^="shipping_method"], #pos_shipping_dropdown', function(){
-                    transformShippingToDropdown();
-                    updateVisibility();
-                });
-
+                // Initial run
                 transformShippingToDropdown();
                 updateVisibility();
+
+                // Hook into WooCommerce AJAX updates
+                $(document.body).on('updated_checkout checkout_error', function(){
+                    $('body').removeClass('pos-dropdown-ready');
+                    setTimeout(function(){
+                        transformShippingToDropdown();
+                        updateVisibility();
+                    }, 50);
+                });
             });
         </script>
         <?php

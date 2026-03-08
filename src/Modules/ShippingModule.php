@@ -18,29 +18,11 @@ class ShippingModule extends AbstractModule {
 
         // Register POS Shipping Method
         add_filter( 'woocommerce_shipping_methods', [ $this, 'add_pos_shipping_method' ] );
-        
-        // Auto-add to zones if missing
-        add_action( 'init', [ $this, 'ensure_method_in_zones' ], 20 );
     }
 
     public function add_pos_shipping_method( $methods ) {
         $methods['pos_bridge_shipping'] = 'POS\WooSync\Modules\POS_Shipping_Method';
         return $methods;
-    }
-
-    public function ensure_method_in_zones() {
-        if ( ! class_exists( 'WC_Shipping_Zones' ) || ! is_admin() ) return;
-        $zones = WC_Shipping_Zones::get_zones();
-        $zones[] = [ 'zone_id' => 0 ];
-        foreach ( $zones as $z ) {
-            $zone_id = isset($z['zone_id']) ? $z['zone_id'] : (isset($z['id']) ? $z['id'] : 0);
-            $zone = new WC_Shipping_Zone( $zone_id );
-            $already_has = false;
-            foreach ( $zone->get_shipping_methods() as $m ) {
-                if ( $m->id === 'pos_bridge_shipping' ) { $already_has = true; break; }
-            }
-            if ( ! $already_has ) { $zone->add_shipping_method('pos_bridge_shipping'); }
-        }
     }
 
     public function register_graphql_types() {
