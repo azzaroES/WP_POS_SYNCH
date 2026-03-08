@@ -73,7 +73,18 @@ class ShippingModule extends AbstractModule {
     }
 
     private function register_shipping_line_fields() {
-        register_graphql_field( 'ShippingLine', 'methodId', [ 'type' => 'String', 'resolve' => function($l) { return is_object($l) ? (method_exists($l, 'get_method_id') ? $l->get_method_id() : null) : ($l['method_id'] ?? null); } ]);
+        register_graphql_field( 'ShippingLine', 'methodId', [ 
+            'type' => 'String', 
+            'resolve' => function($l) { return is_object($l) ? (method_exists($l, 'get_method_id') ? $l->get_method_id() : null) : ($l['method_id'] ?? null); } 
+        ]);
+        register_graphql_field( 'ShippingLine', 'methodTitle', [ 
+            'type' => 'String', 
+            'resolve' => function($l) { return is_object($l) ? (method_exists($l, 'get_method_title') ? $l->get_method_title() : null) : ($l['method_title'] ?? null); } 
+        ]);
+        register_graphql_field( 'ShippingLine', 'instanceId', [ 
+            'type' => 'Int', 
+            'resolve' => function($l) { return is_object($l) ? (method_exists($l, 'get_instance_id') ? (int)$l->get_instance_id() : null) : (int)($l['instance_id'] ?? 0); } 
+        ]);
     }
 }
 
